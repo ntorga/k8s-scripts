@@ -46,7 +46,7 @@ function missingParam() {
 
 function getEnvVar() {
     requestedVar="${1}"
-    requestedVarValue=$(grep "${requestedVar}" "${scriptDirectory}/.env" | awk -F'"' '{print $2}')
+    requestedVarValue=$(grep -P "^${requestedVar}(?=\=)" "${scriptDirectory}/.env" | awk -F'"' '{print $2}')
     if [[ -z "${requestedVarValue}" ]]; then
         missingParam ".env variable '${requestedVar}'"
     fi
