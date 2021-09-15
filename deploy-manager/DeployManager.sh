@@ -4,7 +4,7 @@
 # @author       Northon Torga <northontorga+github@gmail.com>
 # @license      Apache License 2.0
 # @requires     bash v4+, aws cli v2.1+, curl 7.76+
-# @version      0.0.7
+# @version      0.0.8
 # @crontab      1-59/2 * * * * bash /opt/deploy-manager/DeployManager.sh >/dev/null 2>&1
 #
 
@@ -22,9 +22,20 @@ export mainPid
 #
 # Bootstrap Methods
 #
+function isRunningViaCron() {
+    if [[ -t 1 ]]; then
+        return 1
+    fi
+    return 0
+}
+
 function isAlreadyRunning() {
-    nPids=$(pgrep -cf DeployManager)
-    if [[ "${nPids}" -le 1 ]]; then
+    nPids=$(pgrep -cf "${BASH_SOURCE}")
+    maxPids=1
+    if isRunningViaCron; then
+        maxPids=2
+    fi
+    if [[ "${nPids}" -le "${maxPids}" ]]; then
         return 1
     fi
     return 0
