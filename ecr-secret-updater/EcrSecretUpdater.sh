@@ -5,7 +5,7 @@
 # @license      Apache License 2.0
 # @requires     bash v4+
 # @version      0.0.3
-# @crontab      0 */12 * * * root bash /opt/ecr-secret-updater/EcrSecretUpdater.sh >/dev/null 2>&1
+# @crontab      0 */12 * * * bash /opt/ecr-secret-updater/EcrSecretUpdater.sh >/dev/null 2>&1
 #
 
 #
@@ -33,7 +33,7 @@ function missingParam() {
 
 function getEnvVar() {
     requestedVar="${1}"
-    requestedVarValue=$(grep "${requestedVar}" "${scriptDirectory}/.env" | awk -F'"' '{print $2}')
+    requestedVarValue=$(grep -P "^${requestedVar}(?=\=)" "${scriptDirectory}/.env" | awk -F'=' '{print $2}')
     if [[ -z "${requestedVarValue}" ]]; then
         missingParam ".env variable '${requestedVar}'"
     fi
