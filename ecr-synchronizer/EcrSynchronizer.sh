@@ -56,7 +56,7 @@ function getEnvVar() {
 #
 createLogsDir
 
-ecrRepoNames=$(getEnvVar ECR_REPO_NAME)
+ecrRepoNames=$(getEnvVar ECR_REPO_NAMES)
 
 sourceAwsAccessKeyId=$(getEnvVar SOURCE_AWS_ACCESS_KEY_ID)
 export sourceAwsAccessKeyId
