@@ -4,7 +4,7 @@
 # @author       Northon Torga <northontorga+github@gmail.com>
 # @license      Apache License 2.0
 # @requires     bash v4+, aws cli v2.1+, curl 7.76+
-# @version      0.0.8
+# @version      0.0.9
 # @crontab      1-59/2 * * * * bash /opt/deploy-manager/DeployManager.sh >/dev/null 2>&1
 #
 
@@ -13,8 +13,8 @@
 #
 export PATH="${PATH}:/usr/local/sbin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/root/bin"
 
-scriptDirectory=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-export scriptDirectory
+scriptDir=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+export scriptDir
 
 mainPid=$$
 export mainPid
@@ -42,10 +42,10 @@ function isAlreadyRunning() {
 }
 
 function createLogsDir() {
-    if [[ -d "${scriptDirectory}/logs" ]]; then
+    if [[ -d "${scriptDir}/logs" ]]; then
         return 0
     fi
-    mkdir "${scriptDirectory}/logs"
+    mkdir "${scriptDir}/logs"
 }
 
 trap "exit 1" TERM
@@ -56,12 +56,12 @@ function missingParam() {
 }
 
 function getEnvVar() {
-    requestedVar="${1}"
-    requestedVarValue=$(grep -P "^${requestedVar}(?=\=)" "${scriptDirectory}/.env" | awk -F'=' '{print $2}')
-    if [[ -z "${requestedVarValue}" ]]; then
-        missingParam ".env variable '${requestedVar}'"
+    keyName="${1}"
+    keyValue=$(grep -oP "(?<=^${keyName}\=)(.*)$" "${scriptDir}/.env" | tr -d "'\"")
+    if [[ -z "${keyValue}" ]]; then
+        missingParam ".env variable '${keyName}'"
     fi
-    echo "${requestedVarValue}"
+    echo "${keyValue}"
 }
 
 #
@@ -116,7 +116,7 @@ function sendSlackNotification() {
 }
 
 function logAction() {
-    echo "[$(date -u +%FT%TZ)] ${1}" >>"${scriptDirectory}/logs/$(date -u +%F).log"
+    echo "[$(date -u +%FT%TZ)] ${1}" >>"${scriptDir}/logs/$(date -u +%F).log"
 }
 
 #
