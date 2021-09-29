@@ -208,6 +208,9 @@ function restartDeployment() {
 for deployment in ${kubeDeployments[*]}; do
     sleep 1
     ecrRepositoryName="${deployment}-${stage}"
+    if [[ "${stage}" == "STAGE" ]]; then
+        ecrRepositoryName="${deployment}"
+    fi
 
     if ! isThereNewEcrImage "${ecrRepositoryName}"; then continue; fi
     logAction "Found outdated images of '${deployment}'."
