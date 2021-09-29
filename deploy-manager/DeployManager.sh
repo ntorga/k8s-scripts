@@ -112,11 +112,21 @@ function sendSlackNotification() {
     webhookUrl="https://hooks.slack.com/services/${slackWebhookSecret}"
     curl "${webhookUrl}" \
         --header "Content-type: application/json" \
-        --data "{\"text\":\"${notificationMessage}\"}"
+        --data "{\"text\":\"[DeployManager] ${notificationMessage}\"}"
 }
 
 function logAction() {
     echo "[$(date -u +%FT%TZ)] ${1}" >>"${scriptDir}/logs/$(date -u +%F).log"
+}
+
+function isDeploymentDoubleNamed() {
+    deployName="${1}"
+
+    if ! echo "${deployName}" | grep -q '|' 2>/dev/null; then
+        return 1
+    fi
+
+    return 0
 }
 
 #
@@ -136,7 +146,7 @@ function isValidEcrImageId() {
     imageId="${1}"
     imageIdRegex="[a-zA-Z0-9-_+.]+:[a-fA-F0-9]+"
 
-    if ! echo "${imageId}" | grep -qP "${imageIdRegex}"; then
+    if ! echo "${imageId}" | grep -qP "${imageIdRegex}" 2>/dev/null; then
         return 1
     fi
 
@@ -166,11 +176,11 @@ function deleteOutdatedEcrImages() {
     IFS=' ' read -ra imageIds < <(getOutdatedEcrImageIds "${ecrRepository}")
 
     if [[ "${#imageIds[@]}" -le 0 ]]; then
-        logAction "Cleaning job started, but no outdated image was found to be deleted from '${deployment}' repository."
+        logAction "No outdated image was found on '${deploy}' repository."
         return
     fi
 
-    logAction "Image(s) '${imageIds[*]}' from '${deployment}' repository are going to be deleted now."
+    logAction "Image(s) '${imageIds[*]}' from '${deploy}' repository are going to be deleted now."
 
     for imageId in ${imageIds[*]}; do
         awsCli ecr batch-delete-image \
@@ -178,7 +188,7 @@ function deleteOutdatedEcrImages() {
             --image-ids "imageDigest=${imageId}"
     done
 
-    logAction "Deleted image(s) '${imageIds[*]}' from '${deployment}' repository."
+    logAction "Deleted image(s) '${imageIds[*]}' from '${deploy}' repository."
 }
 
 function isThereNewEcrImage() {
@@ -193,10 +203,10 @@ function isThereNewEcrImage() {
 #
 # K8s Methods
 #
-function restartDeployment() {
-    deployment="${1}"
-    if ! kubectl rollout restart "deploy/${deployment}" -n "${kubeNamespace}"; then
-        errorMessage="Unable to restart '${deployment}' deployment at '${stageDomain}' platform (${stage})."
+function restartDeploy() {
+    deploy="${1}"
+    if ! kubectl rollout restart "deploy/${deploy}" -n "${kubeNamespace}"; then
+        errorMessage="Unable to restart '${deploy}' deploy at '${stageDomain}' platform (${stage})."
         logAction "${errorMessage}"
         sendSlackNotification "${errorMessage}"
     fi
@@ -205,16 +215,21 @@ function restartDeployment() {
 #
 # Runtime
 #
-for deployment in ${kubeDeployments[*]}; do
-    sleep 1
-    ecrRepositoryName="${deployment}-${stage}"
+for deploy in ${kubeDeployments[*]}; do
+    deployName="${deploy}"
+    ecrRepositoryName="${deploy}-${stage}"
+
+    if isDeploymentDoubleNamed "${deploy}"; then
+        deployName=$(echo "${deploy}" | awk -F'|' '{print $1}')
+        ecrRepositoryName=$(echo "${deploy}" | awk -F'|' '{print $2}')
+    fi
 
     if ! isThereNewEcrImage "${ecrRepositoryName}"; then continue; fi
-    logAction "Found outdated images of '${deployment}'."
+    logAction "Found outdated images on '${ecrRepositoryName}'."
 
-    logAction "Restarting '${deployment}'."
-    restartDeployment "${deployment}"
+    logAction "Restarting '${deploy}'."
+    restartDeploy "${deployName}"
 
-    logAction "Deleting outdated images of '${deployment}'."
+    logAction "Deleting outdated images on '${ecrRepositoryName}'."
     deleteOutdatedEcrImages "${ecrRepositoryName}"
 done
