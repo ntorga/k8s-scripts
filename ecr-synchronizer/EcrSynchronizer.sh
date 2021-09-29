@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# @description  Synchronize an external registry with ECR
+# @description  Synchronize ECR repos
 # @author       Northon Torga <northontorga+github@gmail.com>
 # @license      Apache License 2.0
-# @requires     bash v4+
-# @version      0.0.1
+# @requires     bash v4+, aws-cli v2, docker v20+
+# @version      0.0.2
 # @crontab      0 * * * * bash /opt/ecr-synchronizer/EcrSynchronizer.sh >/dev/null 2>&1
 #
 
@@ -13,8 +13,8 @@
 #
 export PATH="${PATH}:/usr/local/sbin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/root/bin"
 
-scriptDirectory=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-export scriptDirectory
+scriptDir=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+export scriptDir
 
 mainPid=$$
 export mainPid
@@ -22,15 +22,16 @@ export mainPid
 #
 # Bootstrap Methods
 #
-function createLogsDir() {
-    if [[ -d "${scriptDirectory}/logs" ]]; then
+function makeDirectories() {
+    dirName="${1}"
+    if [[ -d "${scriptDir}/${dirName}" ]]; then
         return 0
     fi
-    mkdir "${scriptDirectory}/logs"
+    mkdir "${scriptDir}/${dirName}"
 }
 
 function logAction() {
-    echo "[$(date -u +%FT%TZ)] ${1}" >>"${scriptDirectory}/logs/$(date -u +%F).log"
+    echo "[$(date -u +%FT%TZ)] ${1}" >>"${scriptDir}/logs/$(date -u +%F).log"
 }
 
 trap "exit 1" TERM
@@ -43,20 +44,21 @@ function missingParam() {
 }
 
 function getEnvVar() {
-    requestedVar="${1}"
-    requestedVarValue=$(grep -P "^${requestedVar}(?=\=)" "${scriptDirectory}/.env" | awk -F'=' '{print $2}')
-    if [[ -z "${requestedVarValue}" ]]; then
-        missingParam ".env variable '${requestedVar}'"
+    keyName="${1}"
+    keyValue=$(grep -oP "(?<=^${keyName}\=)(.*)$" "${scriptDir}/.env" | tr -d "'\"")
+    if [[ -z "${keyValue}" ]]; then
+        missingParam ".env variable '${keyName}'"
     fi
-    echo "${requestedVarValue}"
+    echo "${keyValue}"
 }
 
 #
 # Bootstrap
 #
-createLogsDir
+makeDirectories "logs"
+makeDirectories "locks"
 
-ecrRepoNames=$(getEnvVar ECR_REPO_NAMES)
+ecrRepos=$(getEnvVar ECR_REPOS)
 
 sourceAwsAccessKeyId=$(getEnvVar SOURCE_AWS_ACCESS_KEY_ID)
 export sourceAwsAccessKeyId
@@ -66,9 +68,6 @@ export sourceAwsSecretAccessKey
 
 sourceAwsAccountId=$(getEnvVar SOURCE_AWS_ACCOUNT_ID)
 export sourceAwsAccountId
-
-sourceAwsRegion=$(getEnvVar SOURCE_AWS_REGION)
-export sourceAwsRegion
 
 targetAwsAccessKeyId=$(getEnvVar TARGET_AWS_ACCESS_KEY_ID)
 export targetAwsAccessKeyId
@@ -87,18 +86,21 @@ export targetAwsRegion
 #
 function awsCli() {
     awsAccount="${1}"
+    awsRegion="${2}"
     if [[ -z "${awsAccount}" ]]; then
         missingParam "[awsCli] awsAccount"
     fi
 
+    if [[ -z "${awsRegion}" ]]; then
+        missingParam "[awsCli] awsRegion"
+    fi
+
     awsAccessKeyId="${sourceAwsAccessKeyId}"
     awsSecretAccessKey="${sourceAwsSecretAccessKey}"
-    awsRegion="${sourceAwsRegion}"
 
     if [[ "${awsAccount}" = "target" ]]; then
         awsAccessKeyId="${targetAwsAccessKeyId}"
         awsSecretAccessKey="${targetAwsSecretAccessKey}"
-        awsRegion="${targetAwsRegion}"
     fi
 
     AWS_ACCESS_KEY_ID="${awsAccessKeyId}" \
@@ -115,43 +117,66 @@ function awsCli() {
 function ecrLogin() {
     awsAccount="${1}"
     ecrRepository="${2}"
-    ecrPassword=$(awsCli "${awsAccount}" ecr get-login-password)
+    ecrRegion="${3}"
+    ecrPassword=$(awsCli "${awsAccount}" "${ecrRegion}" ecr get-login-password)
     docker login --username AWS --password "${ecrPassword}" "${ecrRepository}"
 }
 
 function listEcrImages() {
     awsAccount="${1}"
-    ecrRepository="${2}"
-    awsCli "${awsAccount}" ecr list-images --repository-name "${ecrRepository}"
+    ecrRepositoryName="${2}"
+    ecrRegion="${3}"
+
+    awsAccountId="${sourceAwsAccountId}"
+    if [[ "${awsAccount}" != "source" ]]; then
+        awsAccountId="${targetAwsAccountId}"
+    fi
+
+    awsCli "${awsAccount}" "${ecrRegion}" \
+        ecr list-images \
+        --registry-id "${awsAccountId}" \
+        --repository-name "${ecrRepositoryName}"
 }
 
-function getEcrImagesCount() {
+function getEcrImagesIds() {
     awsAccount="${1}"
-    ecrRepository="${2}"
-    listEcrImages "${awsAccount}" "${ecrRepository}" | grep -c "IMAGEIDS"
+    ecrRepositoryName="${2}"
+    ecrRegion="${3}"
+    listEcrImages "${awsAccount}" "${ecrRepositoryName}" "${ecrRegion}" | grep "IMAGEIDS"
 }
+
 function isThereNewEcrImage() {
     awsAccount="${1}"
-    ecrRepository="${2}"
-    imageCount=$(getEcrImagesCount "${awsAccount}" "${ecrRepository}")
-    if [[ "${imageCount}" -eq 1 ]]; then
+    ecrRepositoryName="${2}"
+    ecrRegion="${3}"
+    imagesIds=$(getEcrImagesIds "${awsAccount}" "${ecrRepositoryName}" "${ecrRegion}")
+    currentImagesIdsHash=$(echo "${imagesIds}" | md5sum)
+    lockFilePath="${scriptDir}/locks/${awsAccount}-${ecrRepositoryName}-${ecrRegion}.hash"
+    previousImagesIdsHash=$(cat "${lockFilePath}" 2>/dev/null || echo "0")
+
+    if [[ "${currentImagesIdsHash}" -eq "${previousImagesIdsHash}" ]]; then
         return 1
     fi
+
+    echo "${currentImagesIdsHash}" >"${lockFilePath}"
     return 0
 }
 
 #
 # Runtime
 #
-for ecrRepoName in ${ecrRepoNames[*]}; do
-    sourceEcrDomain="${sourceAwsAccountId}.dkr.ecr.${sourceAwsRegion}.amazonaws.com"
+for ecrRepo in ${ecrRepos[*]}; do
+    ecrRepoRegion=$(echo "${ecrRepo}" | awk -F'|' '{print $1}')
+    ecrRepoName=$(echo "${ecrRepo}" | awk -F'|' '{print $2}')
+
+    sourceEcrDomain="${sourceAwsAccountId}.dkr.ecr.${ecrRepoRegion}.amazonaws.com"
     sourceEcrRepoUrl="${sourceEcrDomain}/${ecrRepoName}"
 
-    if ! isThereNewEcrImage "source" "${sourceEcrRepoUrl}"; then
+    if ! isThereNewEcrImage "source" "${ecrRepoName}" "${ecrRepoRegion}"; then
         continue
     fi
 
-    if ! ecrLogin "source" "${sourceEcrDomain}" 2>/dev/null; then
+    if ! ecrLogin "source" "${sourceEcrDomain}" "${ecrRepoRegion}" 2>/dev/null; then
         logAction "[WARN] Unable to login into source repository: ${ecrRepoName}."
         continue
     fi
@@ -165,7 +190,7 @@ for ecrRepoName in ${ecrRepoNames[*]}; do
 
     docker tag "${sourceEcrRepoUrl}" "${targetEcrRepoUrl}"
 
-    if ! ecrLogin "target" "${sourceEcrDomain}" 2>/dev/null; then
+    if ! ecrLogin "target" "${targetEcrDomain}" "${targetAwsRegion}" 2>/dev/null; then
         logAction "[WARN] Unable to login into target repository: ${ecrRepoName}."
         continue
     fi
