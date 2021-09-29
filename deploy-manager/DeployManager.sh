@@ -4,7 +4,7 @@
 # @author       Northon Torga <northontorga+github@gmail.com>
 # @license      Apache License 2.0
 # @requires     bash v4+, aws cli v2.1+, curl 7.76+
-# @version      0.0.9
+# @version      0.1.0
 # @crontab      1-59/2 * * * * bash /opt/deploy-manager/DeployManager.sh >/dev/null 2>&1
 #
 
@@ -30,7 +30,7 @@ function isRunningViaCron() {
 }
 
 function isAlreadyRunning() {
-    nPids=$(pgrep -cf "${BASH_SOURCE}")
+    nPids=$(pgrep -cf "${BASH_SOURCE[0]}")
     maxPids=1
     if isRunningViaCron; then
         maxPids=2
@@ -208,9 +208,6 @@ function restartDeployment() {
 for deployment in ${kubeDeployments[*]}; do
     sleep 1
     ecrRepositoryName="${deployment}-${stage}"
-    if [[ "${stage}" == "STAGE" ]]; then
-        ecrRepositoryName="${deployment}"
-    fi
 
     if ! isThereNewEcrImage "${ecrRepositoryName}"; then continue; fi
     logAction "Found outdated images of '${deployment}'."
