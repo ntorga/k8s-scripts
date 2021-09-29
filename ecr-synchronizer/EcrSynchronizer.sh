@@ -56,7 +56,7 @@ function getEnvVar() {
 # Bootstrap
 #
 makeDirectories "logs"
-makeDirectories "locks"
+makeDirectories "hashes"
 
 ecrRepos=$(getEnvVar ECR_REPOS)
 
@@ -98,7 +98,7 @@ function awsCli() {
     awsAccessKeyId="${sourceAwsAccessKeyId}"
     awsSecretAccessKey="${sourceAwsSecretAccessKey}"
 
-    if [[ "${awsAccount}" = "target" ]]; then
+    if [[ "${awsAccount}" == "target" ]]; then
         awsAccessKeyId="${targetAwsAccessKeyId}"
         awsSecretAccessKey="${targetAwsSecretAccessKey}"
     fi
@@ -150,11 +150,11 @@ function isThereNewEcrImage() {
     ecrRepositoryName="${2}"
     ecrRegion="${3}"
     imagesIds=$(getEcrImagesIds "${awsAccount}" "${ecrRepositoryName}" "${ecrRegion}")
-    currentImagesIdsHash=$(echo "${imagesIds}" | md5sum)
-    lockFilePath="${scriptDir}/locks/${awsAccount}-${ecrRepositoryName}-${ecrRegion}.hash"
+    currentImagesIdsHash=$(echo "${imagesIds}" | md5sum | awk '{print $1}')
+    lockFilePath="${scriptDir}/hashes/${awsAccount}-${ecrRepositoryName}-${ecrRegion}.hash"
     previousImagesIdsHash=$(cat "${lockFilePath}" 2>/dev/null || echo "0")
 
-    if [[ "${currentImagesIdsHash}" -eq "${previousImagesIdsHash}" ]]; then
+    if [[ "${currentImagesIdsHash}" == "${previousImagesIdsHash}" ]]; then
         return 1
     fi
 
