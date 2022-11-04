@@ -4,7 +4,7 @@
 # @author       Northon Torga <northontorga+github@gmail.com>
 # @license      Apache License 2.0
 # @requires     bash v4+, aws cli v2.1+, curl 7.76+
-# @version      0.1.0
+# @version      1.0.0
 # @crontab      1-59/2 * * * * bash /opt/deploy-manager/DeployManager.sh >/dev/null 2>&1
 #
 
@@ -57,8 +57,9 @@ function missingParam() {
 
 function getEnvVar() {
     keyName="${1}"
+    isOptional="${2}"
     keyValue=$(grep -oP "(?<=^${keyName}\=)(.*)$" "${scriptDir}/.env" | tr -d "'\"")
-    if [[ -z "${keyValue}" ]]; then
+    if [[ -z "${keyValue}" && -z "${isOptional}" ]]; then
         missingParam ".env variable '${keyName}'"
     fi
     echo "${keyValue}"
@@ -71,11 +72,17 @@ if isAlreadyRunning; then exit 0; fi
 
 createLogsDir
 
-stage=$(getEnvVar STAGE)
+stage=$(getEnvVar STAGE true)
 export stage
 
-stageDomain=$(getEnvVar STAGE_DOMAIN)
-export stageDomain
+appDomain=$(getEnvVar APP_DOMAIN true)
+if [[ -z "${appDomain}" ]]; then
+    appDomain=$(getEnvVar STAGE_DOMAIN true)
+fi
+if [[ -z "${appDomain}" ]]; then
+    appDomain="KubernetesCluster"
+fi
+export appDomain
 
 awsRegion=$(getEnvVar AWS_REGION)
 export awsRegion
@@ -89,10 +96,10 @@ export awsSecretAccessKey
 readarray -t kubeDeployments < <(getEnvVar KUBE_DEPLOYMENTS)
 export kubeDeployments
 
-kubeNamespace=$(getEnvVar KUBE_NAMESPACE)
+kubeNamespace=$(getEnvVar KUBE_NAMESPACE true)
 export kubeNamespace
 
-slackWebhookSecret=$(getEnvVar SLACK_WEBHOOK)
+slackWebhookSecret=$(getEnvVar SLACK_WEBHOOK true)
 export slackWebhookSecret
 
 #
@@ -108,6 +115,9 @@ function awsCli() {
 }
 
 function sendSlackNotification() {
+    if [[ -z "${slackWebhookSecret}" ]]; then
+        return
+    fi
     notificationMessage="${*}"
     webhookUrl="https://hooks.slack.com/services/${slackWebhookSecret}"
     curl "${webhookUrl}" \
@@ -205,8 +215,13 @@ function isThereNewEcrImage() {
 #
 function restartDeploy() {
     deploy="${1}"
+    kubeNamespace="${2}"
+    if [[ -z "${kubeNamespace}" ]]; then
+        kubeNamespace=$(kubectl get deployments --all-namespaces | awk "/${deploy}/{print \$1}")
+    fi
+
     if ! kubectl rollout restart "deploy/${deploy}" -n "${kubeNamespace}"; then
-        errorMessage="Unable to restart '${deploy}' deploy at '${stageDomain}' platform (${stage})."
+        errorMessage="Unable to restart '${deploy}' deploy at '${appDomain}' platform (${stage})."
         logAction "${errorMessage}"
         sendSlackNotification "${errorMessage}"
     fi
@@ -217,18 +232,22 @@ function restartDeploy() {
 #
 for deploy in ${kubeDeployments[*]}; do
     deployName="${deploy}"
-    ecrRepositoryName="${deploy}-${stage}"
+    ecrRepositoryName="${deploy}"
+    if [[ -n "${stage}" ]]; then
+        ecrRepositoryName="${deploy}-${stage}"
+    fi
 
     if isDeploymentDoubleNamed "${deploy}"; then
         deployName=$(echo "${deploy}" | awk -F'|' '{print $1}')
         ecrRepositoryName=$(echo "${deploy}" | awk -F'|' '{print $2}')
+        kubeNamespace=$(echo "${deploy}" | awk -F'|' '{print $3}')
     fi
 
     if ! isThereNewEcrImage "${ecrRepositoryName}"; then continue; fi
     logAction "Found outdated images on '${ecrRepositoryName}'."
 
     logAction "Restarting '${deploy}'."
-    restartDeploy "${deployName}"
+    restartDeploy "${deployName}" "${kubeNamespace}"
 
     logAction "Deleting outdated images on '${ecrRepositoryName}'."
     deleteOutdatedEcrImages "${ecrRepositoryName}"
