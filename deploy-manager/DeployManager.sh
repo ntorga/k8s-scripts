@@ -102,6 +102,15 @@ export kubeNamespace
 slackWebhookSecret=$(getEnvVar SLACK_WEBHOOK true)
 export slackWebhookSecret
 
+preScripts=$(getEnvVar PRE_SCRIPTS true)
+export preScripts
+
+postScripts=$(getEnvVar POST_SCRIPTS true)
+export postScripts
+
+scriptsTimeout=$(getEnvVar SCRIPTS_TIMEOUT true)
+export scriptsTimeout
+
 #
 # General Methods
 #
@@ -129,7 +138,7 @@ function logAction() {
     echo "[$(date -u +%FT%TZ)] ${1}" >>"${scriptDir}/logs/$(date -u +%F).log"
 }
 
-function isDeploymentDoubleNamed() {
+function isNamePiped() {
     deployName="${1}"
 
     if ! echo "${deployName}" | grep -q '|' 2>/dev/null; then
@@ -213,11 +222,16 @@ function isThereNewEcrImage() {
 #
 # K8s Methods
 #
+function getDeploymentNamespace() {
+    deploy="${1}"
+    kubectl get deploy -A | awk "/${deploy}/{print \$1}"
+}
+
 function restartDeploy() {
     deploy="${1}"
     kubeNamespace="${2}"
     if [[ -z "${kubeNamespace}" ]]; then
-        kubeNamespace=$(kubectl get deployments --all-namespaces | awk "/${deploy}/{print \$1}")
+        kubeNamespace=$(getDeploymentNamespace "${deploy}")
     fi
 
     if ! kubectl rollout restart "deploy/${deploy}" -n "${kubeNamespace}"; then
@@ -225,6 +239,37 @@ function restartDeploy() {
         logAction "${errorMessage}"
         sendSlackNotification "${errorMessage}"
     fi
+}
+
+#
+# Pre & Post Scripts Methods
+#
+function runScript() {
+    step="${1}"
+    deploy="${2}"
+
+    scripts="${preScripts}"
+    if [[ "${step}" == "post" ]]; then
+        scripts="${postScripts}"
+    fi
+
+    encodedCommand=$(echo "${scripts}" | grep -oP "(?<=${deploy}\|)(?<command>[^\ ]+)")
+    if [[ -z "${encodedCommand}" ]]; then
+        return
+    fi
+
+    decodedCommand=$(echo "${encodedCommand}" | base64 -d 2>/dev/null)
+    if [[ -z "${decodedCommand}" ]]; then
+        return
+    fi
+
+    if [[ -z "${scriptsTimeout}" ]]; then
+        scriptsTimeout="300"
+    fi
+
+    decodedCommand="timeout -sHUP ${scriptsTimeout}s ${decodedCommand}"
+
+    ${decodedCommand}
 }
 
 #
@@ -237,7 +282,7 @@ for deploy in ${kubeDeployments[*]}; do
         ecrRepositoryName="${deploy}-${stage}"
     fi
 
-    if isDeploymentDoubleNamed "${deploy}"; then
+    if isNamePiped "${deploy}"; then
         deployName=$(echo "${deploy}" | awk -F'|' '{print $1}')
         ecrRepositoryName=$(echo "${deploy}" | awk -F'|' '{print $2}')
         kubeNamespace=$(echo "${deploy}" | awk -F'|' '{print $3}')
@@ -246,8 +291,12 @@ for deploy in ${kubeDeployments[*]}; do
     if ! isThereNewEcrImage "${ecrRepositoryName}"; then continue; fi
     logAction "Found outdated images on '${ecrRepositoryName}'."
 
-    logAction "Restarting '${deploy}'."
+    runScript "pre" "${deployName}"
+
+    logAction "Restarting '${deployName}'."
     restartDeploy "${deployName}" "${kubeNamespace}"
+
+    runScript "post" "${deployName}"
 
     logAction "Deleting outdated images on '${ecrRepositoryName}'."
     deleteOutdatedEcrImages "${ecrRepositoryName}"
