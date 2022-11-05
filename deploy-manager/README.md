@@ -2,15 +2,15 @@
 
 The DeployManager is a simple bash CI/CD utility designed to restart Kubernetes services automatically based on new available AWS ECR image.
 
-It is able to do 3 specific taks:
+It is able to do 3 specific tasks:
 
 1. Restart Kubernetes deployments whenever there is a new ECR image for a service;
-2. Housekeep ECR repositories leaving only the last image available;
-3. Execute pre and post commands/scripts before restarting the service.
+2. Housekeeping ECR repositories, leaving only the last image available;
+3. Execute pre and post commands/scripts before/after restarting the deployment.
 
 ## Environment Variables
 
-You must create a `.env` file before executing it. Here's the explaination of each env variable:
+You must create a `.env` file before executing it. Here's the explanation of each env variable:
 
 ```
 STAGE="" # => [optional] Used as a suffix of a service name (for example: hom, prod, dev).
@@ -27,7 +27,7 @@ SLACK_WEBHOOK="" # => [optional] Slack Webhook URL.
 
 The ECR repository name must match the service name precisely. If in your case it does not, you need to provide the deployment name on "KUBE_DEPLOYMENTS" variable with a pipe, i.e: `k8s-deployment-name|ecr-repo-name`.
 
-The "KUBE_NAMESPACE" is optional because the script will try to find the namespace based on the service name. However, in case of different namespaced services with the exact same name, you must provide the deployment name on "KUBE_DEPLOYMENTS" variable afte the ECR name, i.e.: `ks8-deployment-name|ecr-repo-name|k8s-namespace`.
+The "KUBE_NAMESPACE" is optional because the script will try to find the namespace based on the service name. However, in case of different namespaced services with the exact same name, you must provide the deployment name on "KUBE_DEPLOYMENTS" variable after the ECR name, i.e.: `ks8-deployment-name|ecr-repo-name|k8s-namespace`.
 
 Both of these pipe-separated-workaround are performed on a service-base, so you can have a variable such as:
 
