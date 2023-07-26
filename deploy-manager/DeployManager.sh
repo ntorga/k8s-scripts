@@ -224,7 +224,7 @@ function isThereNewEcrImage() {
 #
 function getDeploymentNamespace() {
     deploy="${1}"
-    kubectl get deploy -A | awk "/${deploy}/{print \$1}"
+    kubectl get deploy -A | awk "\$2 == \"${deploy}\" {print \$1}"
 }
 
 function restartDeploy() {
