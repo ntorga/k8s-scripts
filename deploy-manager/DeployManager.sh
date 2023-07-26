@@ -230,9 +230,6 @@ function getDeploymentNamespace() {
 function restartDeploy() {
     deploy="${1}"
     kubeNamespace="${2}"
-    if [[ -z "${kubeNamespace}" ]]; then
-        kubeNamespace=$(getDeploymentNamespace "${deploy}")
-    fi
 
     if ! kubectl rollout restart "deploy/${deploy}" -n "${kubeNamespace}"; then
         errorMessage="Unable to restart '${deploy}' deploy at '${appDomain}' platform (${stage})."
@@ -302,6 +299,8 @@ for deploy in ${kubeDeployments[*]}; do
     if [[ -n "${stage}" ]]; then
         ecrRepositoryName="${deploy}-${stage}"
     fi
+
+    kubeNamespace=$(getDeploymentNamespace "${deploy}")
 
     if isNamePiped "${deploy}"; then
         deployName=$(echo "${deploy}" | awk -F'|' '{print $1}')
