@@ -4,7 +4,7 @@
 # @author       Northon Torga <northontorga+github@gmail.com>
 # @license      Apache License 2.0
 # @requires     bash v4+, aws cli v2.1+, curl 7.76+
-# @version      1.0.0
+# @version      1.1.0
 # @crontab      1-59/2 * * * * bash /opt/deploy-manager/DeployManager.sh >/dev/null 2>&1
 #
 
@@ -224,21 +224,39 @@ function isThereNewEcrImage() {
 #
 function getDeploymentNamespace() {
     deploy="${1}"
-    kubectl get deploy -A | awk "/${deploy}/{print \$1}"
+    kubectl get deploy -A | awk "\$2 == \"${deploy}\" {print \$1}"
 }
 
 function restartDeploy() {
     deploy="${1}"
     kubeNamespace="${2}"
-    if [[ -z "${kubeNamespace}" ]]; then
-        kubeNamespace=$(getDeploymentNamespace "${deploy}")
-    fi
 
     if ! kubectl rollout restart "deploy/${deploy}" -n "${kubeNamespace}"; then
         errorMessage="Unable to restart '${deploy}' deploy at '${appDomain}' platform (${stage})."
         logAction "${errorMessage}"
         sendSlackNotification "${errorMessage}"
     fi
+}
+
+function isDeploymentUsingLatestImage() {
+    local currentImage deploymentName ecrRepository kubeNamespace latestImage
+    deploymentName="${1}"
+    ecrRepository="${2}"
+    kubeNamespace="${3}"
+
+    currentImage=$(
+        kubectl describe pod "${deploymentName}" -n "${kubeNamespace}" |
+            awk -F'@' '/sha256/ {print $2}' |
+            head -1
+    )
+
+    latestImage=$(listEcrImages "${ecrRepository}" | awk '/latest/ {print $2}')
+
+    if [[ "${currentImage}" == "${latestImage}" ]]; then
+        return 0
+    fi
+
+    return 1
 }
 
 #
@@ -288,8 +306,13 @@ for deploy in ${kubeDeployments[*]}; do
         kubeNamespace=$(echo "${deploy}" | awk -F'|' '{print $3}')
     fi
 
-    if ! isThereNewEcrImage "${ecrRepositoryName}"; then continue; fi
-    logAction "Found outdated images on '${ecrRepositoryName}'."
+    if [[ -z "${kubeNamespace}" ]]; then
+        kubeNamespace=$(getDeploymentNamespace "${deployName}")
+    fi
+
+    if isDeploymentUsingLatestImage "${deployName}" "${ecrRepositoryName}" "${kubeNamespace}"; then
+        continue
+    fi
 
     runScript "pre" "${deployName}"
 
@@ -298,6 +321,10 @@ for deploy in ${kubeDeployments[*]}; do
 
     runScript "post" "${deployName}"
 
-    logAction "Deleting outdated images on '${ecrRepositoryName}'."
-    deleteOutdatedEcrImages "${ecrRepositoryName}"
+    if isThereNewEcrImage "${ecrRepositoryName}"; then
+        logAction "Found outdated images on '${ecrRepositoryName}'."
+
+        logAction "Deleting outdated images on '${ecrRepositoryName}'."
+        deleteOutdatedEcrImages "${ecrRepositoryName}"
+    fi
 done
