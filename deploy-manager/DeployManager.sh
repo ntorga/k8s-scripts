@@ -308,16 +308,19 @@ for deploy in ${kubeDeployments[*]}; do
         kubeNamespace=$(echo "${deploy}" | awk -F'|' '{print $3}')
     fi
 
-    if ! isThereNewEcrImage "${ecrRepositoryName}"; then continue; fi
-    logAction "Found outdated images on '${ecrRepositoryName}'."
-
+    if ! isDeploymentUsingLatestImage "${deployName}" "${ecrRepositoryName}" "${kubeNamespace}"; then
         runScript "pre" "${deployName}"
 
         logAction "Restarting '${deployName}'."
         restartDeploy "${deployName}" "${kubeNamespace}"
 
         runScript "post" "${deployName}"
+    fi
+
+    if isThereNewEcrImage "${ecrRepositoryName}"; then
+        logAction "Found outdated images on '${ecrRepositoryName}'."
 
         logAction "Deleting outdated images on '${ecrRepositoryName}'."
         deleteOutdatedEcrImages "${ecrRepositoryName}"
+    fi
 done
