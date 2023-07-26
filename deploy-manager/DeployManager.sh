@@ -241,6 +241,27 @@ function restartDeploy() {
     fi
 }
 
+function isDeploymentUsingLatestImage() {
+    local currentImage deploymentName ecrRepository kubeNamespace latestImage
+    deploymentName="${1}"
+    ecrRepository="${2}"
+    kubeNamespace="${3}"
+
+    currentImage=$(
+        kubectl describe pod "${deploymentName}" -n "${kubeNamespace}" |
+            awk -F'@' '/sha256/ {print $2}' |
+            head -1
+    )
+
+    latestImage=$(listEcrImages "${ecrRepository}" | awk '/latest/ {print $2}')
+
+    if [[ "${currentImage}" == "${latestImage}" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
 #
 # Pre & Post Scripts Methods
 #
@@ -291,13 +312,13 @@ for deploy in ${kubeDeployments[*]}; do
     if ! isThereNewEcrImage "${ecrRepositoryName}"; then continue; fi
     logAction "Found outdated images on '${ecrRepositoryName}'."
 
-    runScript "pre" "${deployName}"
+        runScript "pre" "${deployName}"
 
-    logAction "Restarting '${deployName}'."
-    restartDeploy "${deployName}" "${kubeNamespace}"
+        logAction "Restarting '${deployName}'."
+        restartDeploy "${deployName}" "${kubeNamespace}"
 
-    runScript "post" "${deployName}"
+        runScript "post" "${deployName}"
 
-    logAction "Deleting outdated images on '${ecrRepositoryName}'."
-    deleteOutdatedEcrImages "${ecrRepositoryName}"
+        logAction "Deleting outdated images on '${ecrRepositoryName}'."
+        deleteOutdatedEcrImages "${ecrRepositoryName}"
 done
