@@ -4,7 +4,7 @@
 # @author       Northon Torga <northontorga+github@gmail.com>
 # @license      Apache License 2.0
 # @requires     bash v4+, aws cli v2.1+, curl 7.76+
-# @version      1.0.0
+# @version      1.1.0
 # @crontab      1-59/2 * * * * bash /opt/deploy-manager/DeployManager.sh >/dev/null 2>&1
 #
 
