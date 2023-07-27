@@ -1,6 +1,9 @@
 # Changelog
 
 ```log
+1.1.1 - 07/27/2023
+-- fix: avoid namespace var leak when using piped deploys
+
 1.1.0 - 07/26/2023
 -- fix: allow restart of additional deployments using the same ECR repo
 
