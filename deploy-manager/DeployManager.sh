@@ -303,12 +303,9 @@ for deploy in ${kubeDeployments[*]}; do
     if isNamePiped "${deploy}"; then
         deployName=$(echo "${deploy}" | awk -F'|' '{print $1}')
         ecrRepositoryName=$(echo "${deploy}" | awk -F'|' '{print $2}')
-        kubeNamespace=$(echo "${deploy}" | awk -F'|' '{print $3}')
     fi
 
-    if [[ -z "${kubeNamespace}" ]]; then
-        kubeNamespace=$(getDeploymentNamespace "${deployName}")
-    fi
+    kubeNamespace=$(getDeploymentNamespace "${deployName}")
 
     if isDeploymentUsingLatestImage "${deployName}" "${ecrRepositoryName}" "${kubeNamespace}"; then
         continue
