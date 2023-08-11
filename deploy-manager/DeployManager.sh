@@ -4,7 +4,7 @@
 # @author       Northon Torga <northontorga+github@gmail.com>
 # @license      Apache License 2.0
 # @requires     bash v4+, aws cli v2.1+, curl 7.76+
-# @version      1.1.0
+# @version      1.1.1
 # @crontab      1-59/2 * * * * bash /opt/deploy-manager/DeployManager.sh >/dev/null 2>&1
 #
 
@@ -303,12 +303,9 @@ for deploy in ${kubeDeployments[*]}; do
     if isNamePiped "${deploy}"; then
         deployName=$(echo "${deploy}" | awk -F'|' '{print $1}')
         ecrRepositoryName=$(echo "${deploy}" | awk -F'|' '{print $2}')
-        kubeNamespace=$(echo "${deploy}" | awk -F'|' '{print $3}')
     fi
 
-    if [[ -z "${kubeNamespace}" ]]; then
-        kubeNamespace=$(getDeploymentNamespace "${deployName}")
-    fi
+    kubeNamespace=$(getDeploymentNamespace "${deployName}")
 
     if isDeploymentUsingLatestImage "${deployName}" "${ecrRepositoryName}" "${kubeNamespace}"; then
         continue
