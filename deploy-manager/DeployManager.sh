@@ -13,6 +13,9 @@
 #
 export PATH="${PATH}:/usr/local/sbin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/root/bin"
 
+logFile="${scriptDir}/logs/$(date -u +%F).log"
+export logFile
+
 scriptDir=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 export scriptDir
 
@@ -135,7 +138,7 @@ function sendSlackNotification() {
 }
 
 function logAction() {
-    echo "[$(date -u +%FT%TZ)] ${1}" >>"${scriptDir}/logs/$(date -u +%F).log"
+    echo "[$(date -u +%FT%TZ)] ${1}" >>"${logFile}"
 }
 
 function isNamePiped() {
