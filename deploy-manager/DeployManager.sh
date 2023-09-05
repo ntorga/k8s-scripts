@@ -238,7 +238,10 @@ function restartDeploy() {
         errorMessage="Unable to restart '${deploy}' deploy at '${appDomain}' platform (${stage})."
         logAction "${errorMessage}"
         sendSlackNotification "${errorMessage}"
+        return
     fi
+
+    kubectl rollout status "deploy/${deploy}" -n "${kubeNamespace}" >>"${logFile}"
 }
 
 function isDeploymentUsingLatestImage() {
