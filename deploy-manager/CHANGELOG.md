@@ -1,6 +1,9 @@
 # Changelog
 
 ```log
+1.1.2 - 09/05/2023
+-- feat: wait for and log kubectl rollout status
+
 1.1.1 - 07/27/2023
 -- fix: avoid namespace var leak when using piped deploys
 
