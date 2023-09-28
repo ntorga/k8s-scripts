@@ -13,11 +13,11 @@
 #
 export PATH="${PATH}:/usr/local/sbin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/root/bin"
 
-logFile="${scriptDir}/logs/$(date -u +%F).log"
-export logFile
-
 scriptDir=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 export scriptDir
+
+logFile="${scriptDir}/logs/$(date -u +%F).log"
+export logFile
 
 mainPid=$$
 export mainPid
